@@ -1,0 +1,47 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C / C++ build outputs
+*.o
+*.so
+*.dylib
+*.a
+build/
+bin/
+obj/
+
+# Qualcomm OpenCL JIT cache binaries (device specific)
+*.bin
+*program_cache*.bin
+*weight_cache*.bin
+
+# Temporary benchmark / debug logs
+*.tmp
+*.log
+*raw*.txt
+*.output
+
+# OS generated files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+paper/
+# Research papers and audit/reviewer material
+*audit*
+*AUDIT*
+*reviewer*
+*REVIEWER*
+*review*
+*REVIEW*
+*artifact*
+*ARTIFACT*
+*final_results*
+*FINAL_RESULTS*
+
+# Model/runtime artifacts
+*.litertlm
+*.gguf
+
