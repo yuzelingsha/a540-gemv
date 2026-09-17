@@ -1,0 +1,21 @@
+{
+  "experiment": "blockscale",
+  "hardware": {
+    "device": "Xiaomi MIX 2 (chiron)",
+    "soc": "Snapdragon 835 (MSM8998)",
+    "gpu": "Adreno 540 @ 710 MHz",
+    "cpu": "4x Kryo 280 Gold @ 2.45 GHz",
+    "os": "Android 9 / LineageOS 16.0",
+    "root": true,
+    "thermal_throttling": "disabled (thermal-engine stopped)",
+    "runtime": "LiteRT-LM (Commit: 84263b0)",
+    "opencl_driver": "Qualcomm OpenCL 2.0 (Build 2019)",
+    "model": "MiniCPM-1B-Q4_0 (INT4 block32, FP16 scales, INT8 LM Head)"
+  },
+  "parameters": {
+    "runs": 5,
+    "decode_tokens": 64,
+    "temperature": 0.0,
+    "batch_size": 1
+  }
+}

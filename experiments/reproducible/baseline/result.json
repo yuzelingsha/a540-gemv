@@ -1,0 +1,23 @@
+{
+  "method": "baseline",
+  "metrics": {
+    "tok_per_s_mean": 10.98,
+    "tok_per_s_std": 0.11,
+    "tok_per_s_min": 10.79,
+    "tok_per_s_max": 11.08,
+    "first_divergence_step": null,
+    "fp16_bit_exact": true
+  },
+  "environment": {
+    "device": "Xiaomi MIX 2 (chiron)",
+    "soc": "Snapdragon 835 (MSM8998)",
+    "gpu": "Adreno 540 @ 710 MHz",
+    "cpu": "4x Kryo 280 Gold @ 2.45 GHz",
+    "os": "Android 9 / LineageOS 16.0",
+    "root": true,
+    "thermal_throttling": "disabled (thermal-engine stopped)",
+    "runtime": "LiteRT-LM (Commit: 84263b0)",
+    "opencl_driver": "Qualcomm OpenCL 2.0 (Build 2019)",
+    "model": "MiniCPM-1B-Q4_0 (INT4 block32, FP16 scales, INT8 LM Head)"
+  }
+}

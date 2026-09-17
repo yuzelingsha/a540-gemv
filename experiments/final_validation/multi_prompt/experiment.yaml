@@ -1,0 +1,10 @@
+{
+  "task": "multi_prompt",
+  "prompts": [
+    "QA",
+    "Math",
+    "Code",
+    "Summary",
+    "Creative"
+  ]
+}

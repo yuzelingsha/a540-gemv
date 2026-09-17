@@ -1,0 +1,26 @@
+﻿device:
+  model: Xiaomi MIX 2
+  codename: chiron
+  platform: Qualcomm Snapdragon 835 (MSM8998)
+  memory: 8GB LPDDR4x @ 1866MHz
+gpu:
+  model: Adreno 540
+  frequency: 710000000
+  governor: performance
+cpu:
+  cluster: Kryo 280 Gold
+  cores: 4
+  frequency: 2457600000
+  governor: performance
+  affinity_mask: "0x0c"
+system:
+  os: LineageOS 16.0
+  android_version: 9
+  kernel: 4.4.153-perf+
+  thermal_engine: stopped
+runtime:
+  engine: Google LiteRT-LM
+  commit: 84263b0
+  opencl_driver: Qualcomm OpenCL 2.0 (2019)
+  wait_for_completion: 0
+  kernel_batch_size: 12

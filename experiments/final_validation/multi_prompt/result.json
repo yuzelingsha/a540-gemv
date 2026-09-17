@@ -1,0 +1,22 @@
+{
+  "prompt_A_QA": {
+    "divergence": null,
+    "match": "100%"
+  },
+  "prompt_B_Math": {
+    "divergence": null,
+    "match": "100%"
+  },
+  "prompt_C_Code": {
+    "divergence": null,
+    "match": "100%"
+  },
+  "prompt_D_Summary": {
+    "divergence": null,
+    "match": "100%"
+  },
+  "prompt_E_Creative": {
+    "divergence": null,
+    "match": "100%"
+  }
+}

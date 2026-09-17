@@ -1,0 +1,8 @@
+{
+  "task": "long_generation",
+  "lengths": [
+    64,
+    256,
+    512
+  ]
+}

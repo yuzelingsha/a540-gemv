@@ -1,0 +1,18 @@
+﻿device:
+  model: Xiaomi MIX 2
+  codename: chiron
+  platform: Qualcomm Snapdragon 835 (MSM8998)
+gpu:
+  model: Adreno 540
+  frequency: 710000000
+cpu:
+  cluster: Kryo 280
+  affinity_mask: "0x0c"
+system:
+  os: LineageOS 16.0
+  thermal_engine: stopped
+runtime:
+  engine: Google LiteRT-LM
+  commit: 84263b0
+  wait_for_completion: 0
+  kernel_batch_size: 12
