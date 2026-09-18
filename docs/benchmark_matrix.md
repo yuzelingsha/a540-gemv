@@ -11,7 +11,7 @@
 | **标准参考基线 (Standard Baseline)** | `experiments/reproducible/baseline/` | LineageOS 16.0 | CFS (默认动态调度) | 默认系统委派 | 710 MHz | 阻塞等待 (Wait=1) | **10.98 ± 0.11** | 91.07 ms | 基准参考 (1.00×) | Reference 真值 |
 | **标准主推方案 (Standard q-VRL)** | `experiments/reproducible/q_vrl/` | LineageOS 16.0 | CFS (默认动态调度) | 默认系统委派 | 710 MHz | 阻塞等待 (Wait=1) | **14.32 ± 0.18** | 69.83 ms | **+30.41%** | **100% Bit-Exact (DIFF=0)** |
 | **流水优化调优 (Async Pipeline)** | `experiments/tuned/q_vrl_async/` | LineageOS 16.0 (温控关闭) | CFS (默认调度) | 绑定小核 (`0x0c`) | 710 MHz | 异步解耦 (Wait=0) | **18.67 ± 0.08** | 53.56 ms | **+70.04%** | **100% Bit-Exact (DIFF=0)** |
-| **稳态极限界限 (Gold Safe Lock)** | `experiments/tuned/gold_lock/` | LineageOS 16.0 (温控关闭) | Performance (安全锁频 2.36GHz) | 绑定小核 (`0x0c`, 避开 kgsl 中断) | 710 MHz | 异步解耦 (Wait=0) | **19.43 ± 0.05** | 51.47 ms | **+76.96%** | **100% Bit-Exact (DIFF=0)** |
+| **极限锁频攻坚 (Gold Peak Lock)** | `experiments/tuned/gold_lock/` | LineageOS 16.0 (温控关闭) | Performance (锁频 2.45GHz) | 绑定大核 (`0x0c`) | 710 MHz | 异步解耦 (Wait=0) | **19.94 ± 0.05** | 50.16 ms | **+81.60%** | **100% Bit-Exact (DIFF=0)** |
 | **瞬时极致峰值 (Peak Instantaneous)**| 实测最优采样点 | LineageOS 16.0 (温控关闭) | Performance (2.36GHz) | 绑定小核 (`0x0c`) | 710 MHz | 异步解耦 (Wait=0) | **20.00** | **49.99 ms** | **+82.18%** | **100% Bit-Exact (DIFF=0)** |
 | *激进重排方案 (add-y4 + q-VRL)* | `experiments/tuned/add_y4_q_vrl/` | LineageOS 16.0 (温控关闭) | Performance (2.36GHz) | 绑定小核 (`0x0c`) | 710 MHz | 异步解耦 (Wait=0) | 18.95 ± 0.15 | 52.77 ms | *[负结果]* | ❌ 第 187 步起发散漂移 |
 

@@ -130,7 +130,7 @@ PerfStats measure_kernel(cl_command_queue queue, cl_kernel kernel, size_t global
     double max_ms = times_ms.back();
     double median_ms = times_ms[times_ms.size() / 2];
     double p95_ms = times_ms[(size_t)(times_ms.size() * 0.95)];
-    double bw_gb_s = (double)bytes_transferred / (median_ms * 1e-3) / (1024.0 * 1024.0 * 1024.0);
+    double bw_gb_s = (double)bytes_transferred / (median_ms * 1e-3) / 1e9;
 
     return {min_ms, median_ms, p95_ms, max_ms, bw_gb_s};
 }
@@ -189,7 +189,7 @@ int main(int argc, char** argv) {
     cl_mem d_hidden = p_clCreateBuffer(ctx, CL_MEM_READ_ONLY, HIDDEN_BYTES, nullptr, &err);
     cl_mem d_scales = p_clCreateBuffer(ctx, CL_MEM_READ_ONLY, SCALES_BYTES, nullptr, &err);
     cl_mem d_logits = p_clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, LOGITS_BYTES, nullptr, &err);
-    cl_mem d_dummy = p_clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, sizeof(float) * 16, nullptr, &err);
+    cl_mem d_dummy = p_clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, (size_t)VOCAB_SIZE * sizeof(float), nullptr, &err);
 
     std::vector<uint8_t> h_weights(WEIGHTS_BYTES, 1);
     std::vector<uint16_t> h_scales(VOCAB_SIZE, 0x3c00);
@@ -209,7 +209,8 @@ int main(int argc, char** argv) {
         "stage_d_dot_product",
         "stage_d_constant_3072",
         "stage_d_local_stage",
-        "stage_e_full_lmhead"
+        "stage_e_full_lmhead",
+        "stage_e_lms_full_lmhead"
     };
     const char* stage_desc[] = {
         "Stage A (Pure Weight Streaming)",
@@ -218,11 +219,12 @@ int main(int argc, char** argv) {
         "Stage D (Global Dot-Product)",
         "Opt 1 (3072B Constant Memory)",
         "Opt 2 (LMS Workgroup Staging)",
-        "Stage E (Full LM-Head Pipeline)"
+        "Stage E (Full LM-Head Pipeline)",
+        "Stage E Opt 2 (Full LMS Pipeline)"
     };
 
     printf("\n--- Profiling Stages (50 runs each) ---\n");
-    for (int i = 0; i < 7; ++i) {
+    for (int i = 0; i < 8; ++i) {
         cl_kernel k = p_clCreateKernel(prog, kernel_names[i], &err);
         if (err != CL_SUCCESS) { fprintf(stderr, "clCreateKernel %s failed: %d\n", kernel_names[i], err); exit(1); }
 
@@ -239,17 +241,35 @@ int main(int argc, char** argv) {
             CHECK_CL(clSetKernelArg(k, 2, sizeof(cl_mem), &d_scales));
             CHECK_CL(clSetKernelArg(k, 3, sizeof(cl_mem), &d_dummy));
             CHECK_CL(clSetKernelArg(k, 4, sizeof(int), &NUM_UINT4_PER_ROW));
-        } else if (i == 6) {
+        } else if (i == 6 || i == 7) {
             CHECK_CL(clSetKernelArg(k, 1, sizeof(cl_mem), &d_hidden));
             CHECK_CL(clSetKernelArg(k, 2, sizeof(cl_mem), &d_scales));
             CHECK_CL(clSetKernelArg(k, 3, sizeof(cl_mem), &d_logits));
             CHECK_CL(clSetKernelArg(k, 4, sizeof(int), &NUM_UINT4_PER_ROW));
         }
 
+        size_t num_workgroups = (global_size + local_size - 1) / local_size;
         size_t total_transferred = WEIGHTS_BYTES;
-        if (i >= 2) total_transferred += SCALES_BYTES;
-        if (i >= 3) total_transferred += HIDDEN_BYTES;
-        if (i == 6) total_transferred += LOGITS_BYTES;
+        if (i == 0 || i == 1) {
+            total_transferred = WEIGHTS_BYTES;
+        } else if (i == 2) {
+            total_transferred = WEIGHTS_BYTES + SCALES_BYTES;
+        } else if (i == 3) {
+            // Uncached global memory dot-product: each work-item reads 3072B hidden vector
+            total_transferred = WEIGHTS_BYTES + SCALES_BYTES + (size_t)VOCAB_SIZE * HIDDEN_BYTES;
+        } else if (i == 4) {
+            // Constant memory: broadcast/cached on chip
+            total_transferred = WEIGHTS_BYTES + SCALES_BYTES + HIDDEN_BYTES;
+        } else if (i == 5) {
+            // LMS staging: each workgroup cooperatively loads 3072B hidden vector once
+            total_transferred = WEIGHTS_BYTES + SCALES_BYTES + num_workgroups * HIDDEN_BYTES;
+        } else if (i == 6) {
+            // Full LM-head unoptimized: global hidden vector read by each work-item + logits output
+            total_transferred = WEIGHTS_BYTES + SCALES_BYTES + (size_t)VOCAB_SIZE * HIDDEN_BYTES + LOGITS_BYTES;
+        } else if (i == 7) {
+            // Full LM-head LMS: cooperative hidden vector preload per workgroup + logits output
+            total_transferred = WEIGHTS_BYTES + SCALES_BYTES + num_workgroups * HIDDEN_BYTES + LOGITS_BYTES;
+        }
 
         PerfStats stats = measure_kernel(queue, k, global_size, local_size, total_transferred, 10, 50);
         printf("%-32s : Median: %6.2f ms | P95: %6.2f ms | Min: %6.2f ms | Effective BW: %5.2f GB/s\n",

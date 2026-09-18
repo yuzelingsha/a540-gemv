@@ -16,9 +16,7 @@ __kernel void stage_a_weight_streaming(
         uint4 w = weights[row_offset + k];
         acc ^= (w.x ^ w.y ^ w.z ^ w.w);
     }
-    if (row == 0 && acc == 0xdeadbeef) {
-        dummy_out[0] = (float)acc;
-    }
+    dummy_out[row] = (float)acc;
 }
 
 // Stage B: Weight streaming + unpack to signed chars
@@ -34,19 +32,17 @@ __kernel void stage_b_weight_unpack(
     int acc = 0;
     for (int k = 0; k < num_uint4_per_row; ++k) {
         uint4 w = weights[row_offset + k];
-        // Unpack 16 bytes into integers
-        uchar4 b0 = as_uchar4(w.x);
-        uchar4 b1 = as_uchar4(w.y);
-        uchar4 b2 = as_uchar4(w.z);
-        uchar4 b3 = as_uchar4(w.w);
+        // Unpack 16 bytes into signed integers (sign-extended)
+        char4 b0 = as_char4(w.x);
+        char4 b1 = as_char4(w.y);
+        char4 b2 = as_char4(w.z);
+        char4 b3 = as_char4(w.w);
         acc += (int)b0.x + (int)b0.y + (int)b0.z + (int)b0.w;
         acc += (int)b1.x + (int)b1.y + (int)b1.z + (int)b1.w;
         acc += (int)b2.x + (int)b2.y + (int)b2.z + (int)b2.w;
         acc += (int)b3.x + (int)b3.y + (int)b3.z + (int)b3.w;
     }
-    if (row == 0 && acc == 12345678) {
-        dummy_out[0] = (float)acc;
-    }
+    dummy_out[row] = (float)acc;
 }
 
 // Stage C: Weight unpack + dequant (multiply scale)
@@ -64,15 +60,16 @@ __kernel void stage_c_weight_dequant(
     half acc = 0.0h;
     for (int k = 0; k < num_uint4_per_row; ++k) {
         uint4 w = weights[row_offset + k];
-        uchar4 b0 = as_uchar4(w.x);
-        acc += ((half)((char)b0.x)) * scale;
-        acc += ((half)((char)b0.y)) * scale;
-        acc += ((half)((char)b0.z)) * scale;
-        acc += ((half)((char)b0.w)) * scale;
+        char4 b0 = as_char4(w.x);
+        char4 b1 = as_char4(w.y);
+        char4 b2 = as_char4(w.z);
+        char4 b3 = as_char4(w.w);
+        acc += ((half)b0.x + (half)b0.y + (half)b0.z + (half)b0.w) * scale;
+        acc += ((half)b1.x + (half)b1.y + (half)b1.z + (half)b1.w) * scale;
+        acc += ((half)b2.x + (half)b2.y + (half)b2.z + (half)b2.w) * scale;
+        acc += ((half)b3.x + (half)b3.y + (half)b3.z + (half)b3.w) * scale;
     }
-    if (row == 0 && acc == 999.0h) {
-        dummy_out[0] = (float)acc;
-    }
+    dummy_out[row] = (float)acc;
 }
 
 // Stage D: Full dot-product with 1536 hidden vector
@@ -123,9 +120,7 @@ __kernel void stage_d_dot_product(
         acc += (float)((half)((char)b3.w) * x3.w);
     }
     acc *= (float)scale;
-    if (row == 0 && acc == 999.0f) {
-        dummy_out[0] = acc;
-    }
+    dummy_out[row] = acc;
 }
 
 // Stage E: Full LM-Head with logits writeback
@@ -226,9 +221,7 @@ __kernel void stage_d_constant_3072(
         acc += (float)((half)((char)b3.w) * x3.w);
     }
     acc *= (float)scale;
-    if (row == 0 && acc == 999.0f) {
-        dummy_out[0] = acc;
-    }
+    dummy_out[row] = acc;
 }
 
 // Optimization 2: Workgroup Local Memory Cooperative Staging (64 threads stage 1536 halves = 3072 bytes)
@@ -291,9 +284,7 @@ __kernel void stage_d_local_stage(
         acc += (float)((half)((char)b3.w) * x3.w);
     }
     acc *= (float)scale;
-    if (row == 0 && acc == 999.0f) {
-        dummy_out[0] = acc;
-    }
+    dummy_out[row] = acc;
 }
 
 // Full LM-Head Pipeline with Workgroup LMS Staging (Production Optimization)

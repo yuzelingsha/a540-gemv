@@ -36,7 +36,7 @@ static bool add_virtual_y4_on() { return env_on("ADRENOLLM_DLSYM_ADD_VIRTUAL_Y4"
 static bool int4_y4_on() { return env_on("ADRENOLLM_DLSYM_INT4_Y4") || int4_y4_plain_on() || int4_y4_add_on(); }
 static bool static_replay_on() { return env_on("ADRENOLLM_DLSYM_STATIC_REPLAY"); }
 static bool enqueue_pass_on() { return env_on("ADRENOLLM_DLSYM_ENQUEUE_PASS"); }
-static bool enabled() { return env_on("ADRENOLLM_DLSYM_NO_ZP") || env_on("ADRENOLLM_DLSYM_BLOCK_SCALE") || env_on("ADRENOLLM_DLSYM_LM_NO_ZP") || env_on("ADRENOLLM_DLSYM_LM_UNROLL2") || env_on("ADRENOLLM_DLSYM_LOCAL_SRC384") || int4_y4_on() || q_virtual_y4_on() || add_virtual_y4_on() || geom_x2_on(); }
+static bool enabled() { return env_on("ADRENOLLM_DLSYM_NO_ZP") || env_on("ADRENOLLM_DLSYM_BLOCK_SCALE") || env_on("ADRENOLLM_DLSYM_LM_NO_ZP") || env_on("ADRENOLLM_DLSYM_LM_FACTOR") || env_on("ADRENOLLM_DLSYM_LM_UNROLL2") || env_on("ADRENOLLM_DLSYM_LOCAL_SRC384") || int4_y4_on() || q_virtual_y4_on() || add_virtual_y4_on() || geom_x2_on(); }
 
 static void record_add_program(cl_program p) {
   if (!p || (!geom_x2_on() && !int4_y4_on())) return;
@@ -115,112 +115,120 @@ static cl_program hook_create_program(cl_context context, cl_uint count,
        (int4_y4_plain_on() && !adrenollm_is_int4_add_y16) ||
        (int4_y4_add_on() && adrenollm_is_int4_add_y16));
 
-  // A540 LM-head schedule experiment: two source slices per loop iteration.
-  // The two original bodies execute sequentially, preserving the exact FP16
-  // dequant/MAC order while halving loop-control/address-loop overhead.
-  if (env_on("ADRENOLLM_DLSYM_LM_UNROLL2") &&
-      src.find("weights_scale_image_buffer") != std::string::npos &&
-      src.find("uint4 w = read_imageui(weights_image2d") != std::string::npos &&
-      src.find("for (int src_s = 0; src_s < shared_int4_1.y; src_s += 1)") != std::string::npos) {
-    int zp_reads=0, zp_bias=0;
-    if (env_on("ADRENOLLM_DLSYM_LM_NO_ZP")) {
+  // LM-head optimizations: LM_NO_ZP, LM_FACTOR, LOCAL_SRC384, LM_UNROLL2.
+  if (src.find("weights_scale_image_buffer") != std::string::npos &&
+      src.find("uint4 w = read_imageui(weights_image2d") != std::string::npos) {
+    bool lm_modified = false;
+    int lm_zp_reads = 0, lm_zp_bias = 0;
+
+    if (env_on("ADRENOLLM_DLSYM_LM_NO_ZP") &&
+        src.find("weights_zero_point_image_buffer") != std::string::npos &&
+        src.find("((half4)(128) + w_zp_s0)") != std::string::npos) {
       const std::string zpline = "  half4 w_zp_s0 = read_imageh(weights_zero_point_image_buffer, (dst_s + 0));\n";
-      size_t q=0;
-      while((q=src.find(zpline,q))!=std::string::npos){ src.erase(q,zpline.size()); ++zp_reads; }
+      size_t p = 0;
+      while ((p = src.find(zpline, p)) != std::string::npos) { src.erase(p, zpline.size()); ++lm_zp_reads; }
       replace_all(src,
         "  half4 w_bias_s0 = -w_scale_s0 * ((half4)(128) + w_zp_s0);",
-        "  half4 w_bias_s0 = -w_scale_s0 * (half4)(128);", &zp_bias);
+        "  half4 w_bias_s0 = -w_scale_s0 * (half4)(128);", &lm_zp_bias);
+      if (lm_zp_reads && lm_zp_bias) {
+        lm_modified = true;
+      }
     }
-    const std::string head = "  for (int src_s = 0; src_s < shared_int4_1.y; src_s += 1) {\n";
-    const std::string tail = "    r_sp0_s0 += v0.w * w3;\n  } \n";
-    size_t a=src.find(head);
-    size_t b=(a==std::string::npos)?std::string::npos:src.find(tail,a+head.size());
-    if(a!=std::string::npos && b!=std::string::npos){
-      b += tail.size();
-      size_t body_start=a+head.size();
-      size_t body_end=b-tail.size()+tail.find("\n  } ");
-      std::string body=src.substr(body_start, body_end-body_start);
-      std::string body2=body;
-      replace_all(body2,"src_s","adrenollm_s1");
-      std::string repl =
-        "  for (int src_s = 0; src_s < shared_int4_1.y; src_s += 2) {\n"
-        "    {\n" + body + "    }\n"
-        "    {\n      int adrenollm_s1 = src_s + 1;\n" + body2 + "    }\n"
-        "  } \n";
-      src.replace(a,b-a,repl);
-      int hit=g_patch_hits.fetch_add(1)+1;
-      __android_log_print(ANDROID_LOG_INFO,"AdrenoLLM","LM_UNROLL2 patched #%d zp_reads=%d zp_bias=%d bytes=%zu",hit,zp_reads,zp_bias,src.size());
-      const char* psrc=src.data(); size_t n=src.size();
-      return real(context,1,&psrc,&n,errcode_ret);
-    }
-    __android_log_print(ANDROID_LOG_ERROR,"AdrenoLLM","LM_UNROLL2 pattern miss a=%zu b=%zu",a,b);
-    return real(context,count,strings,lengths,errcode_ret);
-  }
 
-  // MiniCPM5 LM head affine quantization has 130560/130560 zero-points == 0.
-  // Remove the redundant image read without changing the FP16 arithmetic order.
-  if (env_on("ADRENOLLM_DLSYM_LM_NO_ZP") &&
-      src.find("weights_scale_image_buffer") != std::string::npos &&
-      src.find("weights_zero_point_image_buffer") != std::string::npos &&
-      src.find("uint4 w = read_imageui(weights_image2d") != std::string::npos &&
-      src.find("((half4)(128) + w_zp_s0)") != std::string::npos) {
-    int reads=0, biases=0;
-    const std::string zpline = "  half4 w_zp_s0 = read_imageh(weights_zero_point_image_buffer, (dst_s + 0));\n";
-    size_t p=0;
-    while((p=src.find(zpline,p))!=std::string::npos){ src.erase(p,zpline.size()); ++reads; }
-    replace_all(src,
-      "  half4 w_bias_s0 = -w_scale_s0 * ((half4)(128) + w_zp_s0);",
-      "  half4 w_bias_s0 = -w_scale_s0 * (half4)(128);", &biases);
-    if (reads && biases) {
-      int hit=g_patch_hits.fetch_add(1)+1;
-      __android_log_print(ANDROID_LOG_INFO,"AdrenoLLM","LM_NO_ZP patched #%d reads=%d biases=%d bytes=%zu",hit,reads,biases,src.size());
-      const char* psrc=src.data(); size_t n=src.size();
-      return real(context,1,&psrc,&n,errcode_ret);
+    if (env_on("ADRENOLLM_DLSYM_LM_FACTOR") &&
+        src.find("weights_zero_point_image_buffer") != std::string::npos &&
+        src.find("((half4)(128) + w_zp_s0)") != std::string::npos) {
+      int ins = 0, deq = 0, acc = 0, close = 0;
+      const std::string loop = "  for (int src_s = 0; src_s < shared_int4_1.y; src_s += 1) {";
+      size_t p = src.find(loop);
+      if (p != std::string::npos) {
+        const std::string d = "  half4 adrenollm_lm_qacc = (half4)(0.0f);\n  half adrenollm_lm_vsum = (half)(0.0f);\n";
+        src.insert(p, d); ++ins;
+      }
+      for (int i = 0; i < 4; ++i) {
+        std::string line = "    w" + std::to_string(i) + " = w" + std::to_string(i) + " * w_scale_s0 + w_bias_s0;\n";
+        p = 0; while ((p = src.find(line, p)) != std::string::npos) { src.erase(p, line.size()); ++deq; }
+      }
+      const std::string oldacc =
+        "    r_sp0_s0 += v0.x * w0;\n"
+        "    r_sp0_s0 += v0.y * w1;\n"
+        "    r_sp0_s0 += v0.z * w2;\n"
+        "    r_sp0_s0 += v0.w * w3;\n";
+      const std::string newacc =
+        "    adrenollm_lm_qacc += v0.x * w0;\n"
+        "    adrenollm_lm_qacc += v0.y * w1;\n"
+        "    adrenollm_lm_qacc += v0.z * w2;\n"
+        "    adrenollm_lm_qacc += v0.w * w3;\n"
+        "    adrenollm_lm_vsum += v0.x + v0.y + v0.z + v0.w;\n";
+      p = src.find(oldacc); if (p != std::string::npos) { src.replace(p, oldacc.size(), newacc); ++acc; }
+      const std::string oldclose = "  } \n  {\n  half4 res_value";
+      const std::string newclose = "  } \n  r_sp0_s0 = adrenollm_lm_qacc * w_scale_s0 + w_bias_s0 * adrenollm_lm_vsum;\n  {\n  half4 res_value";
+      p = src.find(oldclose); if (p != std::string::npos) { src.replace(p, oldclose.size(), newclose); ++close; }
+      if (ins && deq == 4 && acc && close) {
+        lm_modified = true;
+      }
     }
-    __android_log_print(ANDROID_LOG_ERROR,"AdrenoLLM","LM_NO_ZP pattern miss reads=%d biases=%d",reads,biases);
-    return real(context,count,strings,lengths,errcode_ret);
-  }
 
-  // LM-head INT8 per-output affine dequant: factor scale/bias out of the K loop.
-  if (env_on("ADRENOLLM_DLSYM_LM_FACTOR") &&
-      src.find("weights_scale_image_buffer") != std::string::npos &&
-      src.find("weights_zero_point_image_buffer") != std::string::npos &&
-      src.find("uint4 w = read_imageui(weights_image2d") != std::string::npos &&
-      src.find("((half4)(128) + w_zp_s0)") != std::string::npos) {
-    int ins=0, deq=0, acc=0, close=0;
-    const std::string loop="  for (int src_s = 0; src_s < shared_int4_1.y; src_s += 1) {";
-    size_t p=src.find(loop);
-    if(p!=std::string::npos){
-      const std::string d="  half4 adrenollm_lm_qacc = (half4)(0.0f);\n  half adrenollm_lm_vsum = (half)(0.0f);\n";
-      src.insert(p,d); ++ins;
+    if (env_on("ADRENOLLM_DLSYM_LOCAL_SRC384") &&
+        src.find("for (int src_s = 0; src_s < shared_int4_1.y; src_s += 1)") != std::string::npos) {
+      int local_src384 = 0;
+      const std::string loop = "  for (int src_s = 0; src_s < shared_int4_1.y; src_s += 1) {";
+      size_t p = src.find(loop);
+      if (p != std::string::npos) {
+        const std::string preload =
+          "  __local half4 adrenollm_src_cache[384];\n"
+          "  int adrenollm_lid = get_local_id(0) + get_local_size(0) * (get_local_id(1) + get_local_size(1) * get_local_id(2));\n"
+          "  int adrenollm_lsize = get_local_size(0) * get_local_size(1) * get_local_size(2);\n"
+          "  for (int adrenollm_i = adrenollm_lid; adrenollm_i < 384; adrenollm_i += adrenollm_lsize) {\n"
+          "    adrenollm_src_cache[adrenollm_i] = read_imageh(src_tensor_image2d, smp_zero, (int2)(0, adrenollm_i));\n"
+          "  }\n"
+          "  barrier(CLK_LOCAL_MEM_FENCE);\n";
+        src.insert(p, preload);
+        size_t vp = 0;
+        const std::string vlead = "    half4 v0 = read_imageh(src_tensor_image2d";
+        while ((vp = src.find(vlead, vp)) != std::string::npos) {
+          size_t eol = src.find('\n', vp); if (eol == std::string::npos) break;
+          src.replace(vp, eol - vp, "    half4 v0 = adrenollm_src_cache[src_s];");
+          vp += 42;
+          ++local_src384;
+        }
+        if (local_src384) {
+          lm_modified = true;
+          __android_log_print(ANDROID_LOG_INFO, "AdrenoLLM", "LM-Head LOCAL_SRC384 applied loads=%d bytes=%zu", local_src384, src.size());
+        }
+      }
     }
-    for(int i=0;i<4;++i){
-      std::string line="    w"+std::to_string(i)+" = w"+std::to_string(i)+" * w_scale_s0 + w_bias_s0;\n";
-      p=0; while((p=src.find(line,p))!=std::string::npos){ src.erase(p,line.size()); ++deq; }
+
+    if (env_on("ADRENOLLM_DLSYM_LM_UNROLL2") &&
+        src.find("for (int src_s = 0; src_s < shared_int4_1.y; src_s += 1)") != std::string::npos) {
+      const std::string head = "  for (int src_s = 0; src_s < shared_int4_1.y; src_s += 1) {\n";
+      const std::string tail = "    r_sp0_s0 += v0.w * w3;\n  } \n";
+      size_t a = src.find(head);
+      size_t b = (a == std::string::npos) ? std::string::npos : src.find(tail, a + head.size());
+      if (a != std::string::npos && b != std::string::npos) {
+        b += tail.size();
+        size_t body_start = a + head.size();
+        size_t body_end = b - tail.size() + tail.find("\n  } ");
+        std::string body = src.substr(body_start, body_end - body_start);
+        std::string body2 = body;
+        replace_all(body2, "src_s", "adrenollm_s1");
+        std::string repl =
+          "  for (int src_s = 0; src_s < shared_int4_1.y; src_s += 2) {\n"
+          "    {\n" + body + "    }\n"
+          "    {\n      int adrenollm_s1 = src_s + 1;\n" + body2 + "    }\n"
+          "  } \n";
+        src.replace(a, b - a, repl);
+        lm_modified = true;
+      }
     }
-    const std::string oldacc=
-      "    r_sp0_s0 += v0.x * w0;\n"
-      "    r_sp0_s0 += v0.y * w1;\n"
-      "    r_sp0_s0 += v0.z * w2;\n"
-      "    r_sp0_s0 += v0.w * w3;\n";
-    const std::string newacc=
-      "    adrenollm_lm_qacc += v0.x * w0;\n"
-      "    adrenollm_lm_qacc += v0.y * w1;\n"
-      "    adrenollm_lm_qacc += v0.z * w2;\n"
-      "    adrenollm_lm_qacc += v0.w * w3;\n"
-      "    adrenollm_lm_vsum += v0.x + v0.y + v0.z + v0.w;\n";
-    p=src.find(oldacc); if(p!=std::string::npos){ src.replace(p,oldacc.size(),newacc); ++acc; }
-    const std::string oldclose="  } \n  {\n  half4 res_value";
-    const std::string newclose="  } \n  r_sp0_s0 = adrenollm_lm_qacc * w_scale_s0 + w_bias_s0 * adrenollm_lm_vsum;\n  {\n  half4 res_value";
-    p=src.find(oldclose); if(p!=std::string::npos){ src.replace(p,oldclose.size(),newclose); ++close; }
-    if(ins && deq==4 && acc && close){
-      int hit=g_patch_hits.fetch_add(1)+1;
-      __android_log_print(ANDROID_LOG_INFO,"AdrenoLLM","LM_FACTOR patched #%d ins=%d deq=%d acc=%d close=%d bytes=%zu",hit,ins,deq,acc,close,src.size());
-      const char* psrc=src.data(); size_t n=src.size();
-      return real(context,1,&psrc,&n,errcode_ret);
+
+    if (lm_modified) {
+      int hit = g_patch_hits.fetch_add(1) + 1;
+      __android_log_print(ANDROID_LOG_INFO, "AdrenoLLM", "LM-Head patched #%d bytes=%zu", hit, src.size());
+      const char* psrc = src.data(); size_t n = src.size();
+      return real(context, 1, &psrc, &n, errcode_ret);
     }
-    __android_log_print(ANDROID_LOG_ERROR,"AdrenoLLM","LM_FACTOR pattern miss ins=%d deq=%d acc=%d close=%d",ins,deq,acc,close);
-    return real(context,count,strings,lengths,errcode_ret);
+    return real(context, count, strings, lengths, errcode_ret);
   }
 
   // Only generated blockwise INT4 image kernels. The MiniCPM5-1B quant report

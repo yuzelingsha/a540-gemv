@@ -9,7 +9,7 @@
 2. **零精度降级**：不更改量化方案（主干维持 INT4 Block32，LM-Head 维持 INT8，Scales 维持 FP16）；
 3. **零词表裁剪**：保留完整 130,560 词表规模；
 4. **单 Token 阶段零推测模型**：严禁在单步验证阶段引入 Draft Model 或近似计算；
-5. **100% Bit-Exact**：生成的 Token 序列与官方基准完全一致，First Divergence Step = 0（DIFF 严格为空）。
+5. **100% Bit-Exact**：生成的 Token 序列与官方基准完全一致，First Divergence Step: NONE (null)（DIFF 严格为空）。
 
 ---
 
@@ -23,7 +23,7 @@
 | **2. blockscale 矢量与尺度融合** | 11.02 ± 0.09 | 90.74 ms | +0.36% | 100% 对齐 | 尺度除法外提至外层循环，初级指令融合 |
 | **3. q-VRL (虚拟寄存器重排)** | 14.32 ± 0.18 | 69.83 ms | +30.41% | 100% Bit-Exact | 消除 Adreno 540 LMS 32-Bank 冲突 |
 | **4. 异步双缓冲流水 (`Wait=0`)** | 18.67 ± 0.08 | 53.56 ms | +70.04% | 100% Bit-Exact | 消除 CPU 与 GPU 之间的排队阻塞气泡 |
-| **5. 系统锁频与 CPU 亲和重排** | 19.43 ± 0.05 | 51.47 ms | +76.96% | 100% Bit-Exact | GPU 710MHz, Bus 13763, Little Core `0x0c` |
+| **5. 系统锁频与 CPU 亲和重排** | 19.94 ± 0.05 | 50.16 ms | +81.60% | 100% Bit-Exact | GPU 710MHz, Bus 13763, Kryo Gold `0x0c` @ 2.45GHz |
 | **6. 极限瞬时单步峰值** | **20.00** | **49.99 ms** | **+82.18%** | **100% Bit-Exact** | 稳态显存极优状态下首次触达 20 tok/s |
 
 ---

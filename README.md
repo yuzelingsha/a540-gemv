@@ -33,7 +33,7 @@ a540-gemv (AdrenoLLM) 是针对 **Qualcomm Snapdragon 835 / Adreno 540** 移动�
 ### 1.2 高级调优模式 (Advanced Tuned Configuration)
 在深入驱动层优化（关闭温控、锁定小核亲和性 `0x0c` 规避 `kgsl_3d0` 驱动中断冲突、大核保守安全锁频 2.36GHz 杜绝欠压崩溃、开启驱动异步等待 `Wait=0`）后，系统端到端吞吐进一步上探：
 - **流水优化版 (q-VRL Async)**: **18.67 ± 0.08 tok/s** (`experiments/tuned/q_vrl_async/`)
-- **稳态极限压测 (Gold Safe Lock)**: **19.43 ± 0.05 tok/s** (51.47 ms) (`experiments/tuned/gold_lock/`)
+- **极限锁频攻坚 (Gold Peak Lock)**: **19.94 ± 0.05 tok/s** (50.16 ms) (`experiments/tuned/gold_lock/`)
 - **瞬时单步极致峰值 (Peak Instantaneous)**: **20.00 tok/s** (49.99 ms)
 - *激进重排方案 (add-y4 + q-VRL)*: 18.95 tok/s (*负结果: 破坏浮点累加结合律，第 187 步数值发散*)
 
