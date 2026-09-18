@@ -45,3 +45,4 @@ paper/
 *.litertlm
 *.gguf
 
+benchmarks/lmhead_microbench/lmhead_microbench
